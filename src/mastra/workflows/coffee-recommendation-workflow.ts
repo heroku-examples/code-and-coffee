@@ -82,7 +82,7 @@ const generateRecommendationStep = createStep({
       // Generate a unique thread ID for this recommendation request
       const threadId = `recommendation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       const resourceId = `user-${Date.now()}`; // In a real app, this would come from user authentication
-      
+
       // Use the agent's generate method with structured output and proper thread/resource IDs
       const response = await coffeeSommelierAgent.generate([{ role: 'user', content: prompt }], {
         threadId,

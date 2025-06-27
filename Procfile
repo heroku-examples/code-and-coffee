@@ -1,1 +1,1 @@
-web: npm run start:mastra
+web: npm start
