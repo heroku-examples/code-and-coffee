@@ -5,4 +5,7 @@
 /.react-router/
 /build/
 
+# Mastra
+.mastra/
+
 .env
