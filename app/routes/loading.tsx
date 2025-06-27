@@ -109,8 +109,8 @@ export default function Loading() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.9 }}
           >
-            <div className="bg-heroku-purple-10/80 border border-heroku-purple-30/30 rounded-lg p-3 landscape:p-4 font-mono text-sm backdrop-blur-sm">
-              <div className="text-heroku-cloud-60 mb-2">$ git push heroku main</div>
+            <div className="bg-heroku-purple-10/80 border border-heroku-purple-30/30 rounded-lg p-3 landscape:p-4 font-mono text-sm backdrop-blur-sm text-left">
+              <div className="text-heroku-cloud-60 mb-2 text-left">$ git push heroku main</div>
               <div className="flex items-center space-x-2">
                 <div className="text-heroku-purple-70 text-xs landscape:text-sm">
                   Deploying your perfect coffee...

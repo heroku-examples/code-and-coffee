@@ -3,9 +3,32 @@ import { Button } from '~/components/ui/button';
 import { Card, CardContent } from '~/components/ui/card';
 import { Coffee, Code } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useState, useEffect } from 'react';
 import PageTransition from '~/components/PageTransition';
 
+const TAGLINES = [
+  "Because debugging at 3 AM requires premium fuel",
+  "Scale your caffeine like you scale on Heroku",
+  "From git push heroku main to perfect cup",
+  "The only algorithm that matters before 10 AM",
+  "Deploy your morning routine to production",
+  "Your IDE has syntax highlighting, your coffee should too",
+  "Pair programming with the perfect brew",
+  "Heroku for your coffee stack",
+  "Zero-downtime coffee deployment",
+  "Build, deploy, caffeinate, repeat",
+  "Version control for your coffee preferences",
+  "Auto-scaling your energy levels since 2024"
+];
+
 export default function Welcome() {
+  const [tagline, setTagline] = useState('');
+
+  useEffect(() => {
+    // Select a random tagline on component mount
+    const randomTagline = TAGLINES[Math.floor(Math.random() * TAGLINES.length)];
+    setTagline(randomTagline);
+  }, []);
   return (
     <PageTransition>
       <div className="min-h-screen bg-gradient-to-br from-heroku-purple-10 via-heroku-violet-20 to-heroku-cloud-20 flex flex-col items-center justify-center p-4 landscape:px-8">
@@ -150,9 +173,14 @@ export default function Welcome() {
 
         {/* Footer */}
         <div className="absolute bottom-4 landscape:bottom-6 text-center">
-          <p className="text-sm text-heroku-purple-70">
-            Perfect for developers at tech conferences
-          </p>
+          <motion.p 
+            className="text-sm text-heroku-purple-70 max-w-sm mx-auto px-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.6, delay: 0.8 }}
+          >
+            {tagline}
+          </motion.p>
         </div>
       </div>
     </PageTransition>
