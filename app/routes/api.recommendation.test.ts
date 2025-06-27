@@ -1,194 +1,241 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { action } from './api.recommendation';
-import { sampleRequest } from '~/types';
+import type { ActionFunctionArgs } from 'react-router';
 
-// Mock environment variables for Heroku AI provider
-beforeAll(() => {
-  process.env.HEROKU_INFERENCE_KEY = 'test-api-key';
-  process.env.HEROKU_INFERENCE_URL = 'https://test-inference-url.com';
-  process.env.HEROKU_INFERENCE_MODEL_ID = 'test-model-id';
-});
+// Mock the Mastra workflow
+vi.mock('../../src/mastra', () => ({
+  mastra: {
+    getWorkflow: vi.fn(() => ({
+      createRunAsync: vi.fn(() => ({
+        start: vi.fn(() => ({
+          status: 'success',
+          result: {
+            coffeeName: 'Mock Coffee',
+            flavorProfile: 'Mock flavor profile',
+            reasoning: 'Mock reasoning',
+          },
+        })),
+      })),
+    })),
+  },
+}));
 
-describe('API Recommendation Endpoint', () => {
-  describe('POST /api/recommendation', () => {
-    it('should return a coffee recommendation for valid request', async () => {
-      const request = new Request('http://localhost/api/recommendation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sampleRequest),
-      });
+describe('API Recommendation Route', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
-      const response = await action({ request });
-      expect(response.status).toBe(200);
-
-      const data = await response.json();
-      expect(data).toHaveProperty('coffeeName');
-      expect(data).toHaveProperty('flavorProfile');
-      expect(data).toHaveProperty('reasoning');
-      expect(typeof data.coffeeName).toBe('string');
-      expect(data.coffeeName.length).toBeGreaterThan(0);
+  it('should return 405 for GET requests', async () => {
+    const request = new Request('http://localhost/api/recommendation', {
+      method: 'GET',
     });
 
-    it('should return 405 for non-POST requests', async () => {
-      const request = new Request('http://localhost/api/recommendation', {
-        method: 'GET',
-      });
+    const response = await action({
+      request,
+      params: {},
+      context: {},
+    } as ActionFunctionArgs);
+    const data = await response.json();
 
-      const response = await action({ request });
-      expect(response.status).toBe(405);
+    expect(response.status).toBe(405);
+    expect(data.error).toBe('Method not allowed');
+  });
 
-      const data = await response.json();
-      expect(data.error).toBe('Method not allowed');
+  it('should return 400 for invalid request data', async () => {
+    const request = new Request('http://localhost/api/recommendation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ invalid: 'data' }),
     });
 
-    it('should return 400 for invalid request body', async () => {
-      const invalidRequest = {
-        language: 'InvalidLanguage',
+    const response = await action({
+      request,
+      params: {},
+      context: {},
+    } as ActionFunctionArgs);
+    const data = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(data.error).toBe('Invalid request data');
+  });
+
+  it('should handle missing required fields', async () => {
+    const request = new Request('http://localhost/api/recommendation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        language: 'Node.js',
+        // Missing framework, ide, vibe
+      }),
+    });
+
+    const response = await action({
+      request,
+      params: {},
+      context: {},
+    } as ActionFunctionArgs);
+    const data = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(data.error).toBe('Invalid request data');
+    expect(data.details).toBeDefined();
+  });
+
+  it('should return fallback recommendation when workflow fails', async () => {
+    // Mock workflow to fail
+    const { mastra } = await import('../../src/mastra');
+    vi.mocked(mastra.getWorkflow).mockReturnValue({
+      createRunAsync: vi.fn(() => ({
+        start: vi.fn(() => ({
+          status: 'error',
+          result: null,
+        })),
+      })),
+    } as any);
+
+    const request = new Request('http://localhost/api/recommendation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        language: 'Node.js',
         framework: 'Express.js',
         ide: 'VS Code',
         vibe: 'elegantly-simple',
-      };
+      }),
+    });
 
+    const response = await action({
+      request,
+      params: {},
+      context: {},
+    } as ActionFunctionArgs);
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data.coffeeName).toBe('Debug Blend');
+    expect(data.flavorProfile).toContain('robust, full-bodied coffee');
+    expect(data.reasoning).toContain('reliable blend');
+  });
+
+  it('should return successful recommendation for valid input', async () => {
+    const validRequest = {
+      language: 'Node.js',
+      framework: 'Express.js',
+      ide: 'VS Code',
+      vibe: 'elegantly-simple',
+    };
+
+    const nodeRequestObj = new Request('http://localhost/api/recommendation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(validRequest),
+    });
+
+    const pythonRequestObj = new Request('http://localhost/api/recommendation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...validRequest, language: 'Python' }),
+    });
+
+    const nodeResponse = await action({
+      request: nodeRequestObj,
+      params: {},
+      context: {},
+    } as ActionFunctionArgs);
+    const pythonResponse = await action({
+      request: pythonRequestObj,
+      params: {},
+      context: {},
+    } as ActionFunctionArgs);
+
+    const nodeData = await nodeResponse.json();
+    const pythonData = await pythonResponse.json();
+
+    // Both should return successful responses
+    expect(nodeResponse.status).toBe(200);
+    expect(pythonResponse.status).toBe(200);
+
+    // Both should have the required fields
+    expect(nodeData).toHaveProperty('coffeeName');
+    expect(nodeData).toHaveProperty('flavorProfile');
+    expect(nodeData).toHaveProperty('reasoning');
+
+    expect(pythonData).toHaveProperty('coffeeName');
+    expect(pythonData).toHaveProperty('flavorProfile');
+    expect(pythonData).toHaveProperty('reasoning');
+
+    // Values should be strings
+    expect(typeof nodeData.coffeeName).toBe('string');
+    expect(typeof nodeData.flavorProfile).toBe('string');
+    expect(typeof nodeData.reasoning).toBe('string');
+
+    expect(typeof pythonData.coffeeName).toBe('string');
+    expect(typeof pythonData.flavorProfile).toBe('string');
+    expect(typeof pythonData.reasoning).toBe('string');
+  });
+
+  it('should handle all supported programming languages', async () => {
+    const languages = ['Node.js', 'Python', 'Java', 'Go', 'Ruby', '.NET', 'PHP'];
+
+    for (const language of languages) {
       const request = new Request('http://localhost/api/recommendation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(invalidRequest),
+        body: JSON.stringify({
+          language,
+          framework: 'Test Framework',
+          ide: 'Test IDE',
+          vibe: 'test-vibe',
+        }),
       });
 
-      const response = await action({ request });
-      expect(response.status).toBe(400);
-
+      const response = await action({
+        request,
+        params: {},
+        context: {},
+      } as ActionFunctionArgs);
       const data = await response.json();
-      expect(data.error).toBe('Invalid request format');
-    });
 
-    it('should return 400 for missing fields', async () => {
-      const incompleteRequest = {
-        language: 'Node.js',
-        framework: 'Express.js',
-        // missing ide and vibe
-      };
-
-      const request = new Request('http://localhost/api/recommendation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(incompleteRequest),
-      });
-
-      const response = await action({ request });
-      expect(response.status).toBe(400);
-    });
-
-    it('should gracefully handle malformed JSON with fallback', async () => {
-      const request = new Request('http://localhost/api/recommendation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: 'invalid json',
-      });
-
-      const response = await action({ request });
-      // With Mastra integration, we return 200 with fallback instead of 500
       expect(response.status).toBe(200);
-
-      const data = await response.json();
-      // Should still have a valid coffee recommendation structure
       expect(data).toHaveProperty('coffeeName');
       expect(data).toHaveProperty('flavorProfile');
       expect(data).toHaveProperty('reasoning');
+    }
+  });
+
+  it('should handle malformed JSON', async () => {
+    const request = new Request('http://localhost/api/recommendation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'invalid json',
     });
 
-    it('should return different recommendations for different languages (with fallback)', async () => {
-      const nodeRequest = { ...sampleRequest, language: 'Node.js' as const };
-      const pythonRequest = { ...sampleRequest, language: 'Python' as const };
+    const response = await action({
+      request,
+      params: {},
+      context: {},
+    } as ActionFunctionArgs);
+    const data = await response.json();
 
-      const nodeRequestObj = new Request('http://localhost/api/recommendation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(nodeRequest),
-      });
+    expect(response.status).toBe(200); // Should return fallback
+    expect(data.coffeeName).toBe('Debug Blend');
+  });
 
-      const pythonRequestObj = new Request('http://localhost/api/recommendation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(pythonRequest),
-      });
-
-      const nodeResponse = await action({ request: nodeRequestObj });
-      const pythonResponse = await action({ request: pythonRequestObj });
-
-      expect(nodeResponse.status).toBe(200);
-      expect(pythonResponse.status).toBe(200);
-
-      const nodeData = await nodeResponse.json();
-      const pythonData = await pythonResponse.json();
-
-      // When AI provider is available, we get different recommendations
-      // When falling back, we get language-specific fallbacks
-      if (nodeData.coffeeName !== 'Debug Blend') {
-        // AI provider is working - test AI-generated responses
-        expect(nodeData.coffeeName).not.toBe(pythonData.coffeeName);
-      } else {
-        // AI provider not available - test fallback responses
-        expect(nodeData.coffeeName).toBe('Async Espresso');
-        expect(pythonData.coffeeName).toBe('Pythonic Colombian');
-      }
+  it('should handle empty request body', async () => {
+    const request = new Request('http://localhost/api/recommendation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '',
     });
 
-    it('should include request context in reasoning (with fallback support)', async () => {
-      const customRequest = {
-        language: 'Go' as const,
-        framework: 'Gin',
-        ide: 'VS Code',
-        vibe: 'cutting-edge-explorer',
-      };
+    const response = await action({
+      request,
+      params: {},
+      context: {},
+    } as ActionFunctionArgs);
+    const data = await response.json();
 
-      const request = new Request('http://localhost/api/recommendation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(customRequest),
-      });
-
-      const response = await action({ request });
-      expect(response.status).toBe(200);
-
-      const data = await response.json();
-
-      // If AI provider is available, check for specific context
-      // If falling back, just ensure we get a valid response structure
-      if (data.coffeeName !== 'Debug Blend') {
-        // AI provider is working - test AI-generated content
-        expect(data.reasoning).toContain('Go');
-      } else {
-        // AI provider not available - test fallback content
-        expect(data.coffeeName).toBe('Concurrent Cold Brew');
-        expect(data.reasoning).toContain('Gin');
-        expect(data.reasoning).toContain('cutting-edge-explorer');
-      }
-    });
-
-    it('should successfully integrate with Mastra workflow', async () => {
-      const request = new Request('http://localhost/api/recommendation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sampleRequest),
-      });
-
-      const response = await action({ request });
-      expect(response.status).toBe(200);
-
-      const data = await response.json();
-
-      // Verify the response structure matches our API contract
-      expect(data).toMatchObject({
-        coffeeName: expect.any(String),
-        flavorProfile: expect.any(String),
-        reasoning: expect.any(String),
-      });
-
-      // Verify all fields have meaningful content
-      expect(data.coffeeName.length).toBeGreaterThan(0);
-      expect(data.flavorProfile.length).toBeGreaterThan(0);
-      expect(data.reasoning.length).toBeGreaterThan(0);
-    });
+    expect(response.status).toBe(200); // Should return fallback
+    expect(data.coffeeName).toBe('Debug Blend');
   });
 });

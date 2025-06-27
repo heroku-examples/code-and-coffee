@@ -2,7 +2,6 @@ import { createWorkflow, createStep } from '@mastra/core/workflows';
 import { z } from 'zod';
 import { coffeeSommelierAgent } from '../agents/coffee-sommelier-agent';
 import { coffeeKnowledgeTool } from '../tools/coffee-recommendation-tool';
-import type { RecommendationRequest, RecommendationResponse } from '../../../app/types/api';
 
 /**
  * Improved Coffee Recommendation Workflow
@@ -80,8 +79,15 @@ const generateRecommendationStep = createStep({
     `;
 
     try {
-      // Use the agent's generate method with structured output
-      const response = await coffeeSommelierAgent.generate([{ role: 'user', content: prompt }]);
+      // Generate a unique thread ID for this recommendation request
+      const threadId = `recommendation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const resourceId = `user-${Date.now()}`; // In a real app, this would come from user authentication
+      
+      // Use the agent's generate method with structured output and proper thread/resource IDs
+      const response = await coffeeSommelierAgent.generate([{ role: 'user', content: prompt }], {
+        threadId,
+        resourceId,
+      });
 
       // Parse the response - handle both direct JSON and markdown-wrapped JSON
       let result;
@@ -156,34 +162,3 @@ export const coffeeRecommendationWorkflow = createWorkflow({
   .then(gatherKnowledgeStep)
   .then(generateRecommendationStep)
   .commit();
-
-/**
- * Execute the coffee recommendation workflow
- * This now properly uses Mastra's workflow execution system
- */
-export async function executeCoffeeRecommendation(
-  preferences: RecommendationRequest
-): Promise<RecommendationResponse> {
-  try {
-    const run = await coffeeRecommendationWorkflow.createRunAsync();
-
-    const result = await run.start({
-      inputData: {
-        language: preferences.language,
-        framework: preferences.framework,
-        ide: preferences.ide,
-        vibe: preferences.vibe,
-      },
-    });
-
-    if (result.status === 'success' && result.result) {
-      return result.result;
-    } else {
-      console.error(`Workflow failed with status: ${result.status}`, result);
-      throw new Error(`Workflow failed with status: ${result.status}`);
-    }
-  } catch (error) {
-    console.error('Coffee recommendation workflow error:', error);
-    throw error; // Re-throw to let the API handle the fallback
-  }
-}

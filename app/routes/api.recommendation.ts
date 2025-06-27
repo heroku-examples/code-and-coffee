@@ -1,74 +1,69 @@
-import 'dotenv/config';
+import type { ActionFunctionArgs } from 'react-router';
 import { z } from 'zod';
-import {
-  validateRecommendationRequest,
-  type RecommendationRequest,
-  type RecommendationResponse,
-} from '~/types';
-import { executeCoffeeRecommendation } from '../../src/mastra/workflows/coffee-recommendation-workflow';
+import type { RecommendationResponse } from '../types/api';
+import { mastra } from '../../src/mastra';
 
-// Zod schema for additional validation
+// Validation schema for the request - matching the workflow's expected enum
 const RecommendationRequestSchema = z.object({
   language: z.enum(['Node.js', 'Python', 'Java', 'Go', 'Ruby', '.NET', 'PHP']),
-  framework: z.string().min(1),
-  ide: z.string().min(1),
-  vibe: z.string().min(1),
+  framework: z.string().min(1, 'Framework is required'),
+  ide: z.string().min(1, 'IDE is required'),
+  vibe: z.string().min(1, 'Vibe is required'),
 });
 
 /**
+ * API route for generating coffee recommendations
  * POST /api/recommendation
- * Generates a coffee recommendation based on user preferences using Mastra AI
  */
-export async function action({ request }: { request: Request }) {
-  // Only allow POST requests
+export async function action({ request }: ActionFunctionArgs) {
   if (request.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed', status: 405 }), {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
       status: 405,
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  let validatedData: RecommendationRequest | null = null;
-
   try {
-    // Parse the request body
+    // Parse and validate the request body
     const body = await request.json();
+    const validatedData = RecommendationRequestSchema.parse(body);
 
-    // Validate using our custom validation function
-    if (!validateRecommendationRequest(body)) {
-      return new Response(
-        JSON.stringify({
-          error: 'Invalid request format',
-          status: 400,
-          details: 'Request must include valid language, framework, ide, and vibe fields',
-        }),
-        {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
+    console.log('Generating coffee recommendation for:', validatedData);
+
+    // Use the proper Mastra approach: get the workflow from the mastra instance
+    const workflow = mastra.getWorkflow('coffeeRecommendationWorkflow');
+
+    if (!workflow) {
+      throw new Error('Coffee recommendation workflow not found');
     }
 
-    // Additional validation with Zod for extra safety
-    validatedData = RecommendationRequestSchema.parse(body);
+    // Execute the workflow using the proper Mastra pattern
+    const run = await workflow.createRunAsync();
 
-    // Use Mastra AI workflow to generate the recommendation
-    console.log('Generating coffee recommendation with Mastra for:', validatedData);
-    const recommendation = await executeCoffeeRecommendation(validatedData);
+    const result = await run.start({
+      inputData: validatedData,
+    });
+
+    if (result.status !== 'success' || !result.result) {
+      throw new Error('Workflow execution failed');
+    }
+
+    const recommendation = result.result as RecommendationResponse;
+
+    console.log('Generated recommendation:', recommendation);
 
     return new Response(JSON.stringify(recommendation), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('API Error:', error);
+    console.error('Error in recommendation API:', error);
 
     if (error instanceof z.ZodError) {
       return new Response(
         JSON.stringify({
-          error: 'Validation failed',
-          status: 400,
-          details: error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', '),
+          error: 'Invalid request data',
+          details: error.errors,
         }),
         {
           status: 400,
@@ -77,74 +72,18 @@ export async function action({ request }: { request: Request }) {
       );
     }
 
-    // If Mastra workflow fails, provide a fallback response
-    const fallbackRecommendation = generateFallbackRecommendation(
-      validatedData || {
-        language: 'Node.js',
-        framework: 'Express.js',
-        ide: 'VS Code',
-        vibe: 'elegantly-simple',
-      }
-    );
+    // Fallback recommendation for any other errors
+    const fallbackRecommendation: RecommendationResponse = {
+      coffeeName: 'Debug Blend',
+      flavorProfile:
+        'A robust, full-bodied coffee with notes of dark chocolate and a hint of vanilla. Smooth finish with just enough caffeine to power through those late-night coding sessions.',
+      reasoning:
+        "When the code breaks, you need a coffee that won't. This reliable blend is like a well-tested function - it always delivers consistent results and keeps you running smoothly.",
+    };
 
-    console.warn('Mastra workflow failed, using fallback recommendation');
     return new Response(JSON.stringify(fallbackRecommendation), {
-      status: 200, // Still return 200 since we have a fallback
+      status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
   }
-}
-
-/**
- * Fallback recommendation generator when Mastra workflow fails
- * Provides a reliable backup response
- */
-function generateFallbackRecommendation(request: RecommendationRequest): RecommendationResponse {
-  const fallbackRecommendations: Record<string, RecommendationResponse> = {
-    'Node.js': {
-      coffeeName: 'Async Espresso',
-      flavorProfile: 'Bold and efficient with notes of vanilla and a smooth, non-blocking finish',
-      reasoning: `Like Node.js, this espresso is single-threaded but powerful - it gets things done fast and efficiently. Your choice of ${request.framework} framework and ${request.ide} IDE suggests you appreciate streamlined tools, and the ${request.vibe} vibe calls for a coffee that delivers maximum impact with minimal complexity.`,
-    },
-    Python: {
-      coffeeName: 'Pythonic Colombian',
-      flavorProfile: 'Smooth, well-balanced, and universally beloved with hints of chocolate',
-      reasoning: `Just like Python, this Colombian coffee is elegant, readable, and gets the job done beautifully. With ${request.framework} framework and ${request.ide} in your toolkit, plus a ${request.vibe} approach, you need a coffee that's as versatile and reliable as your favorite language.`,
-    },
-    Java: {
-      coffeeName: 'Enterprise Dark Roast',
-      flavorProfile: 'Robust, full-bodied, and built to last with strong, consistent notes',
-      reasoning: `Like Java itself, this dark roast is enterprise-grade - robust, reliable, and ready for any challenge. Your ${request.framework} framework, ${request.ide} setup, and ${request.vibe} philosophy align perfectly with a coffee that's been proven in production environments worldwide.`,
-    },
-    Go: {
-      coffeeName: 'Concurrent Cold Brew',
-      flavorProfile: 'Clean, efficient, and refreshingly fast with no unnecessary complexity',
-      reasoning: `Go's simplicity and speed deserve a coffee that matches - this cold brew is efficient, clean, and gets straight to the point. With ${request.framework} framework, ${request.ide}, and your ${request.vibe} mindset, you need fuel that performs without the overhead.`,
-    },
-    Ruby: {
-      coffeeName: 'Artisan Pour-Over',
-      flavorProfile:
-        'Elegant and expressive with carefully crafted flavor notes that make you happy',
-      reasoning: `Ruby developers appreciate beauty in simplicity, and this pour-over delivers exactly that. Your ${request.framework} framework, ${request.ide} choice, and ${request.vibe} approach show you value craftsmanship - this coffee celebrates the same principles of elegant, expressive design.`,
-    },
-    '.NET': {
-      coffeeName: 'Structured Macchiato',
-      flavorProfile:
-        'Layered, well-organized, and enterprise-ready with a perfect balance of components',
-      reasoning: `Like the .NET ecosystem, this macchiato has structure, layers, and enterprise-grade reliability. Your ${request.framework} framework, ${request.ide} toolkit, and ${request.vibe} philosophy call for a coffee that's as well-architected and dependable as your favorite framework.`,
-    },
-    PHP: {
-      coffeeName: 'Classic Americano',
-      flavorProfile: 'Straightforward, reliable, and gets the job done without fanfare',
-      reasoning: `PHP powers the web quietly and effectively, just like this Americano powers developers. With ${request.framework} framework, ${request.ide}, and your ${request.vibe} approach, you need a coffee that's practical, dependable, and ready for anything the internet throws at it.`,
-    },
-  };
-
-  return (
-    fallbackRecommendations[request.language] || {
-      coffeeName: "Developer's Choice Blend",
-      flavorProfile: 'A perfect balance of energy and focus with notes of determination',
-      reasoning: `Every great developer needs great coffee. Your combination of ${request.language}, ${request.framework}, ${request.ide}, and ${request.vibe} energy deserves a custom blend designed for peak performance.`,
-    }
-  );
 }

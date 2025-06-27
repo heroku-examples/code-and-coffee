@@ -1,12 +1,50 @@
 import 'dotenv/config';
 import { createHerokuProvider } from 'heroku-ai-provider';
 import { Agent } from '@mastra/core/agent';
-import { z } from 'zod';
-import type { RecommendationRequest, RecommendationResponse } from '../../../app/types/api';
+import { Memory } from '@mastra/memory';
+import { LibSQLStore } from '@mastra/libsql';
 import { coffeeKnowledgeTool, developerProfileTool } from '../tools/coffee-recommendation-tool';
 
 const heroku = createHerokuProvider({
   chatApiKey: process.env.INFERENCE_KEY,
+});
+
+// Configure memory with LibSQL storage for conversation persistence
+const memory = new Memory({
+  storage: new LibSQLStore({
+    // Use file-based storage for persistence across sessions
+    url: 'file:./mastra-memory.db',
+  }),
+  options: {
+    // Keep last 10 messages for conversation context
+    lastMessages: 10,
+    // Enable working memory to maintain user preferences
+    workingMemory: {
+      enabled: true,
+      scope: 'thread', // Changed from 'resource' to 'thread' to avoid thread ID requirements
+      template: `# Coffee Preferences & Profile
+
+## Developer Profile
+- **Name**: 
+- **Preferred Languages**: 
+- **Favorite Frameworks**: 
+- **IDE Preferences**: 
+- **Coding Philosophy**: 
+
+## Coffee Preferences
+- **Previous Recommendations**: 
+- **Liked Coffee Types**: 
+- **Disliked Coffee Types**: 
+- **Brewing Methods**: 
+- **Flavor Preferences**: 
+
+## Session Notes
+- **Last Interaction**: 
+- **Feedback Given**: 
+- **Special Requests**: 
+`,
+    },
+  },
 });
 
 /**
@@ -62,55 +100,6 @@ export const coffeeSommelierAgent = new Agent({
   //model: openai('gpt-4o-mini'),
   model: heroku.chat('claude-4-sonnet'),
   tools: { coffeeKnowledgeTool, developerProfileTool },
+  // Add memory support to the agent
+  memory,
 });
-
-/**
- * Schema for validating coffee recommendation responses
- */
-export const CoffeeRecommendationSchema = z.object({
-  coffeeName: z.string().describe('Creative, tech-themed coffee name'),
-  flavorProfile: z.string().describe('Detailed sensory description of the coffee'),
-  reasoning: z
-    .string()
-    .describe('Witty explanation connecting the coffee to their coding preferences'),
-});
-
-/**
- * Generate a coffee recommendation based on developer preferences
- */
-export async function generateCoffeeRecommendation(
-  preferences: RecommendationRequest
-): Promise<RecommendationResponse> {
-  const prompt = `
-    Analyze this developer's profile and recommend the perfect coffee:
-    
-    **Developer Profile:**
-    - Programming Language: ${preferences.language}
-    - Framework: ${preferences.framework}
-    - IDE: ${preferences.ide}
-    - Coding Philosophy: ${preferences.vibe}
-    
-    Consider how these choices reflect their personality, work style, and preferences. 
-    Match them with a coffee that complements their coding journey.
-    
-    Remember to be witty and make clever connections between their tech choices and coffee characteristics!
-  `;
-
-  try {
-    const response = await coffeeSommelierAgent.generate(prompt, {
-      output: CoffeeRecommendationSchema,
-      temperature: 0.8, // Higher temperature for more creative responses
-    });
-
-    if (!response.object) {
-      throw new Error('Failed to generate structured coffee recommendation');
-    }
-
-    return response.object as RecommendationResponse;
-  } catch (error) {
-    console.error('Error generating coffee recommendation:', error);
-
-    // Re-throw the error so the API route can handle the fallback
-    throw error;
-  }
-}
