@@ -4,9 +4,10 @@ import { Agent } from '@mastra/core/agent';
 import { z } from 'zod';
 import type { RecommendationRequest, RecommendationResponse } from '../../../app/types/api';
 import { coffeeKnowledgeTool, developerProfileTool } from '../tools/coffee-recommendation-tool';
-import { openai } from '@ai-sdk/openai';
 
-const heroku = createHerokuProvider();
+const heroku = createHerokuProvider({
+  chatApiKey: process.env.INFERENCE_KEY,
+});
 
 /**
  * Coffee Sommelier Agent for Code & Coffee Flavor Profiler
