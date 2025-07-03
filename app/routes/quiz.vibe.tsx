@@ -7,6 +7,7 @@ import { ArrowLeft } from 'lucide-react';
 import { QUIZ_OPTIONS } from '~/types';
 import { motion } from 'framer-motion';
 import PageTransition from '~/components/PageTransition';
+import { getOrCreateSessionId } from '~/lib/session';
 
 export default function QuizVibe() {
   const [selectedVibe, setSelectedVibe] = useState<string | null>(null);
@@ -31,8 +32,25 @@ export default function QuizVibe() {
           // Navigate to loading screen
           navigate('/loading');
 
-          // Make API call
           try {
+            // First, save the complete response to the database
+            const sessionId = getOrCreateSessionId();
+
+            await fetch('/api/responses', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                sessionId,
+                language,
+                framework,
+                ide,
+                vibe: selectedVibe,
+              }),
+            });
+
+            console.log('Quiz response saved to database for session:', sessionId);
+
+            // Then make recommendation API call
             const response = await fetch('/api/recommendation', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -55,7 +73,8 @@ export default function QuizVibe() {
               alert(`Error: ${result.error}`);
               navigate('/welcome');
             }
-          } catch {
+          } catch (error) {
+            console.error('Error during quiz completion:', error);
             alert('Something went wrong. Please try again.');
             navigate('/welcome');
           }
