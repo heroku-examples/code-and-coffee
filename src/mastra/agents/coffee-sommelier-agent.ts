@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import { createHerokuProvider } from 'heroku-ai-provider';
 import { Agent } from '@mastra/core/agent';
 import { Memory } from '@mastra/memory';

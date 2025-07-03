@@ -1,5 +1,3 @@
-import 'dotenv/config';
-
 /**
  * GET /api/health
  * Simple health check endpoint to verify the server is running
